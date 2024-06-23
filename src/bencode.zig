@@ -1,7 +1,10 @@
 const std = @import("std");
 
+const MAX_RECURSION_DEPTH = 10;
+
 pub const BencodeError = error{
-    InvalidFormat
+    InvalidFormat,
+    RecursionDepthExceeded
 };
 
 pub const BencodeParsedInteger = struct {
@@ -13,6 +16,15 @@ pub const BencodeParsedString = struct {
     value: []const u8,
     count: usize,
 };
+
+pub const BencodeParsedList = struct {
+    count: usize,
+};
+
+pub const BencodeParsedDict = struct {
+    count: usize,
+};
+
 
 pub fn parseString(buf: []const u8) !BencodeParsedString {
     var accum: usize = 0;
@@ -92,6 +104,117 @@ pub fn parseInt(buf: []const u8) !BencodeParsedInteger {
         accum = addResult[0];
     }
     return BencodeError.InvalidFormat;
+}
+
+fn parseListRecursive (buf: []const u8, depth: usize, maxDepth: usize) BencodeError!BencodeParsedList {
+    if (buf[0] != 'l') {
+        return BencodeError.InvalidFormat;
+    }
+
+    var i: usize = 1;
+    while (i < buf.len) {
+        const byte = buf[i];
+        if (byte == 'e') {
+            std.debug.print("Found end of list\n", .{});
+            return BencodeParsedList{ .count = i + 1 };
+        }
+        else if (byte == 'i') {
+            const parsed = try parseInt(buf[i..]);
+            i += parsed.count;
+            std.debug.print("Parsed integer: {}\n", .{parsed});
+        } 
+        else if (byte == 'l') {
+            if (depth >= maxDepth) {
+                return BencodeError.RecursionDepthExceeded;
+            }
+            const parsed = try parseListRecursive(buf[i..], depth + 1, maxDepth);
+            i += parsed.count;
+        }
+        else if (byte == 'd') {
+            if (depth >= maxDepth) {
+                return BencodeError.RecursionDepthExceeded;
+            }
+            const parsed = try parseDictRecursive(buf[i..], depth + 1, maxDepth);
+            i += parsed.count;
+        }
+        else {
+            const parsed = try parseString(buf[i..]);
+            i += parsed.count;
+            std.debug.print("Parsed string: {}\n", .{parsed});
+        }
+    }
+    return BencodeError.InvalidFormat;
+}
+
+pub fn parseList (buf: []const u8) !BencodeParsedList 
+{
+    return parseListRecursive(buf, 0, MAX_RECURSION_DEPTH);
+}
+
+fn parseDictRecursive (buf: []const u8, depth: usize, maxDepth: usize) BencodeError!BencodeParsedDict 
+{
+    if (buf[0] != 'd') {
+        return BencodeError.InvalidFormat;
+    }
+    
+    var i: usize = 1;
+    while (i < buf.len) {
+        var byte = buf[i];
+        if (byte == 'e') {
+            std.debug.print("Found end of dict\n", .{});
+            return BencodeParsedDict{ .count = i + 1 };
+        }
+        
+        const parsedKey = try parseString(buf[i..]);
+        i += parsedKey.count;
+
+        byte = buf[i];
+        const key = parsedKey.value;
+        std.debug.print("{d}: ", .{key});
+
+        if (byte == 'i') {
+            const parsed = try parseInt(buf[i..]);
+            i += parsed.count;
+            std.debug.print("{d}\n", .{parsed.value});
+        } 
+        else if (byte == 'l') {
+            if (depth >= maxDepth) {
+                return BencodeError.RecursionDepthExceeded;
+            }
+            const parsed = try parseListRecursive(buf[i..], depth + 1, maxDepth);
+            i += parsed.count;
+        }
+        else if (byte == 'd') {
+            if (depth >= maxDepth) {
+                return BencodeError.RecursionDepthExceeded;
+            }
+            const parsed = try parseDictRecursive(buf[i..], depth + 1, maxDepth);
+            i += parsed.count;
+        }
+        else {
+            const parsed = try parseString(buf[i..]);
+            i += parsed.count;
+            std.debug.print("{s}\n", .{parsed.value});
+        }
+    }
+    return BencodeError.InvalidFormat;
+}
+
+pub fn parseDict (buf: []const u8) !BencodeParsedDict 
+{
+    return parseDictRecursive(buf, 0, MAX_RECURSION_DEPTH);
+}
+
+test "parseDict can parse a simple dictionary" {
+    const example = "d3:cow3:moo4:spam4:eggse";
+    const parsed = try parseDict(example);
+    try std.testing.expectEqual(parsed.count, 24);
+}
+
+test "parseList can parse a simple list" {
+    const example = "l4:spam4:eggse";
+    const parsed = try parseList(example);
+    try std.testing.expectEqual(parsed.count, 14);
 }
 
 test "parseString can parse a simple string" {

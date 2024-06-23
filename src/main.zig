@@ -30,7 +30,7 @@ fn dumpAscii(buf: []const u8) void {
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
-    const file = try std.fs.cwd().openFile("archlinux-2024.06.01-x86_64.iso.torrent", .{});
+    const file = try std.fs.cwd().openFile("data/archlinux-2024.06.01-x86_64.iso.torrent", .{});
     defer file.close(); // Ensure the file is closed when done
 
     const buf = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
@@ -39,11 +39,9 @@ pub fn main() !void {
     hexDump(slice);
     dumpAscii(slice);
 
-    const example = "i42e";
-    const parsed = try bencode.parseInt(example);
-    std.debug.print("Parsed: {}\n", .{parsed});
-
-    const example2 = "4:spam";
-    const parsed2 = try bencode.parseString(example2);
-    std.debug.print("Parsed: {}\n", .{parsed2});
+    // const example3 = "l4:spam4:eggse";
+    // const example3 = "ll5:helloi42eel3:fooi7eee";
+    // const example3 = "d4:spaml1:a1:bee";
+    const parsed = try bencode.parseDict(buf);
+    std.debug.print("{}\n", .{parsed});
 }
